@@ -1,2 +1,6 @@
-streamlit
+numpy
 pandas
+plotly
+streamlit
+streamlit-option-menu
+scikit-learn
