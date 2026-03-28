@@ -1,6 +1,7 @@
 # app.py
 # -*- coding: utf-8 -*-
 
+from pathlib import Path
 from textwrap import dedent
 
 import numpy as np
@@ -24,10 +25,13 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 # CONFIG
 # =========================================================
 st.set_page_config(
-    page_title="EBTT Dashboard Acadêmico",
+    page_title="Dashboard Acadêmico de Reprovação - EBTT",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+BASE_DIR = Path(__file__).resolve().parent
+RESULTADO_DIR = BASE_DIR / "estatistica_descritiva" / "resultado"
 
 
 # =========================================================
@@ -81,9 +85,6 @@ def aplicar_css():
                 right: 1rem;
             }
 
-            /* =====================================================
-               SETA DA SIDEBAR EM PRETO
-            ===================================================== */
             [data-testid="collapsedControl"] svg,
             [data-testid="stSidebarCollapsedControl"] svg,
             button[kind="header"] svg {
@@ -98,9 +99,6 @@ def aplicar_css():
                 color: #000000 !important;
             }
 
-            /* =====================================================
-               SIDEBAR
-            ===================================================== */
             section[data-testid="stSidebar"] {
                 background: var(--sidebar-blue) !important;
                 border-right: none !important;
@@ -219,9 +217,6 @@ def aplicar_css():
                 color: rgba(255,255,255,0.80) !important;
             }
 
-            /* =====================================================
-               MAIN
-            ===================================================== */
             .main-title {
                 font-size: 2.9rem;
                 font-weight: 800;
@@ -387,9 +382,6 @@ def aplicar_css():
                 color-scheme: light !important;
             }
 
-            /* =====================================================
-               ANALISE DE DADOS
-            ===================================================== */
             .analytics-metric-card {
                 background: #FFFFFF;
                 border: 1px solid #E6EBF3;
@@ -440,6 +432,11 @@ def aplicar_css():
                 color: #D69E2E !important;
             }
 
+            .metric-green .analytics-metric-value,
+            .metric-green .analytics-metric-head i {
+                color: #2F855A !important;
+            }
+
             .analytics-panel {
                 background: #FFFFFF;
                 border: 1px solid #E6EBF3;
@@ -465,76 +462,6 @@ def aplicar_css():
                 margin-bottom: 4px;
             }
 
-            .status-card {
-                border-radius: 14px;
-                padding: 14px 14px 12px 14px;
-                border: 1.5px solid #E5EAF1;
-                min-height: 104px;
-                margin-bottom: 12px;
-            }
-
-            .status-card-bad {
-                background: #FFF5F5;
-                border-color: #FEB2B2;
-            }
-
-            .status-card-good {
-                background: #F0FFF4;
-                border-color: #9AE6B4;
-            }
-
-            .status-card-neutral {
-                background: #F7FAFC;
-                border-color: #CBD5E0;
-            }
-
-            .status-badge {
-                display: inline-block;
-                padding: 3px 8px;
-                border-radius: 999px;
-                font-size: 0.72rem;
-                font-weight: 800;
-                line-height: 1;
-                margin-bottom: 10px;
-                color: #FFFFFF !important;
-                background: #1A202C;
-            }
-
-            .status-card-bad .status-badge {
-                background: #E53E3E !important;
-            }
-
-            .status-card-good .status-badge {
-                background: #1A202C !important;
-            }
-
-            .status-card-neutral .status-badge {
-                background: #4A5568 !important;
-            }
-
-            .status-value {
-                font-size: 1.9rem;
-                font-weight: 800;
-                color: #1A202C !important;
-                line-height: 1.05;
-            }
-
-            .status-label {
-                font-size: 0.84rem;
-                color: #7A8798 !important;
-                margin-top: 2px;
-            }
-
-            .status-share {
-                float: right;
-                font-size: 0.82rem;
-                color: #7A8798 !important;
-                font-weight: 700;
-            }
-
-            /* =====================================================
-               GRAFICOS
-            ===================================================== */
             .viz-page-title {
                 font-size: 2.15rem;
                 font-weight: 800;
@@ -575,9 +502,6 @@ def aplicar_css():
                 margin-top: 0.35rem;
             }
 
-            /* =====================================================
-               PREVISAO
-            ===================================================== */
             .pred-model-title {
                 display: flex;
                 align-items: center;
@@ -802,7 +726,7 @@ def aplicar_css():
 
 
 # =========================================================
-# DEMO DATA
+# DEMO DATA / MODELO
 # =========================================================
 @st.cache_data
 def gerar_base_demo(n=1000, seed=42):
@@ -880,9 +804,6 @@ def gerar_base_demo(n=1000, seed=42):
     return df
 
 
-# =========================================================
-# HELPERS
-# =========================================================
 def normalizar_colunas(df):
     df = df.copy()
     df.columns = [str(c).strip() for c in df.columns]
@@ -1003,27 +924,6 @@ def treinar_modelo(df_modelo):
     return resultados, None
 
 
-def classe_status_card(status: str) -> str:
-    s = str(status).strip().upper()
-
-    ruins = {
-        "CANCELADO", "TRANCADO", "DESISTENCIA", "DESISTÊNCIA",
-        "REPROVADO", "REP. FALTA", "REP. MEDIA E FALTA",
-        "REPROVAÇÃO", "EVADIDO", "ABANDONO"
-    }
-
-    bons = {
-        "CONCLUÍDO", "CONCLUIDO", "FORMADO", "APROVADO",
-        "ATIVO - FORMANDO", "MATRICULADO"
-    }
-
-    if s in ruins:
-        return "status-card-bad"
-    if s in bons:
-        return "status-card-good"
-    return "status-card-neutral"
-
-
 def format_pct(x):
     return f"{100 * x:.1f}%"
 
@@ -1032,11 +932,18 @@ def fmt_int_br(x):
     return f"{int(x):,}".replace(",", ".")
 
 
+def fmt_float_br(x, casas=2):
+    try:
+        return f"{float(x):,.{casas}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except Exception:
+        return x
+
+
 def h1_dashboard():
     st.markdown(
         """
-        <div class="main-title">Evasão Acadêmica do EBTT</div>
-        <div class="sub-title">Análise preditiva para identificação de risco de abandono escolar</div>
+        <div class="main-title">Reprovação Acadêmica do EBTT</div>
+        <div class="sub-title">Predição de reprovação por modelos de aprendizado de máquina</div>
         """,
         unsafe_allow_html=True,
     )
@@ -1085,10 +992,93 @@ def montar_entrada_previsao(df, features, media_geral, faixa_renda, ano_ingresso
 
 def classificacao_risco(prob):
     if prob < 0.30:
-        return "Baixo Risco", "pred-risk-low", "Acompanhamento rotineiro é suficiente no momento."
+        return "Baixo Risco", "pred-risk-low", "O estudante apresenta baixo risco de reprovação. O acompanhamento rotineiro é suficiente no momento."
     if prob < 0.60:
-        return "Médio Risco", "pred-risk-mid", "Estudante em situação de atenção. Recomenda-se acompanhamento pedagógico e monitoramento da frequência."
-    return "Alto Risco", "pred-risk-high", "Estudante em situação crítica. Recomenda-se intervenção prioritária e contato ativo da equipe pedagógica."
+        return "Médio Risco", "pred-risk-mid", "Estudante em situação de atenção quanto à reprovação. Recomenda-se acompanhamento pedagógico e monitoramento do desempenho."
+    return "Alto Risco", "pred-risk-high", "Estudante com alto risco de reprovação. Recomenda-se intervenção prioritária e acompanhamento ativo da equipe pedagógica."
+
+
+# =========================================================
+# LEITURA DOS CSVs DA ANÁLISE
+# =========================================================
+@st.cache_data
+def ler_csv_resultado(nome_arquivo):
+    caminho = RESULTADO_DIR / nome_arquivo
+    if not caminho.exists():
+        return None
+
+    df = pd.read_csv(caminho)
+    df = normalizar_colunas(df)
+
+    primeira_col = df.columns[0]
+    if str(primeira_col).lower().startswith("unnamed") or str(primeira_col).strip() == "":
+        df = df.rename(columns={primeira_col: "indicador"})
+
+    return df
+
+
+@st.cache_data
+def carregar_resultados_analise():
+    return {
+        "comparacao": ler_csv_resultado("comparacao_aprov_reprov.csv"),
+        "ranking_cursos": ler_csv_resultado("ranking_cursos.csv"),
+        "ranking_disciplinas": ler_csv_resultado("ranking_disciplinas.csv"),
+        "serie_temporal": ler_csv_resultado("serie_temporal.csv"),
+    }
+
+
+def preparar_serie_temporal(df):
+    if df is None or df.empty:
+        return None
+
+    df = df.copy()
+    if "ano_periodo" not in df.columns or "reprovado" not in df.columns:
+        return None
+
+    df["ano_periodo"] = df["ano_periodo"].astype(str).str.strip()
+    partes = df["ano_periodo"].str.split(".", n=1, expand=True)
+
+    df["ano"] = pd.to_numeric(partes[0], errors="coerce")
+    df["periodo"] = pd.to_numeric(partes[1], errors="coerce")
+    df["reprovado"] = pd.to_numeric(df["reprovado"], errors="coerce")
+
+    df = df.dropna(subset=["ano", "periodo", "reprovado"]).copy()
+    df = df.sort_values(["ano", "periodo"]).reset_index(drop=True)
+
+    df["reprovado"] = df["reprovado"].clip(lower=0, upper=1)
+    df["aprovado"] = 1 - df["reprovado"]
+    df["reprovado_pct"] = df["reprovado"] * 100
+    df["aprovado_pct"] = df["aprovado"] * 100
+
+    return df
+
+
+def extrair_valor_comparacao(df_comp, indicador, coluna):
+    if df_comp is None:
+        return np.nan
+
+    if "indicador" not in df_comp.columns:
+        primeira = df_comp.columns[0]
+        df_comp = df_comp.rename(columns={primeira: "indicador"})
+
+    alvo = df_comp["indicador"].astype(str).str.strip().str.lower() == str(indicador).strip().lower()
+    if alvo.sum() == 0 or coluna not in df_comp.columns:
+        return np.nan
+
+    return pd.to_numeric(df_comp.loc[alvo, coluna], errors="coerce").iloc[0]
+
+
+def metric_card_html(titulo, icone, valor, subtitulo, classe):
+    return dedent(f"""
+    <div class="analytics-metric-card {classe}">
+        <div class="analytics-metric-head">
+            <span>{titulo}</span>
+            <i class="bi {icone}"></i>
+        </div>
+        <div class="analytics-metric-value">{valor}</div>
+        <div class="analytics-metric-sub">{subtitulo}</div>
+    </div>
+    """)
 
 
 # =========================================================
@@ -1113,8 +1103,8 @@ def sidebar_controles():
 
         pagina = option_menu(
             menu_title=None,
-            options=["Home", "Análise de Dados", "Gráficos", "Previsão de Evasão"],
-            icons=["house-door-fill", "bar-chart-fill", "pie-chart-fill", "robot"],
+            options=["Home", "Análise de Dados", "Previsão de Reprovação"],
+            icons=["house-door-fill", "bar-chart-fill", "robot"],
             default_index=0,
             styles={
                 "container": {
@@ -1149,7 +1139,7 @@ def sidebar_controles():
         st.markdown(
             """
             <div class="sidebar-footnote">
-                Evasão Acadêmica EBTT © 2026
+                Reprovação Acadêmica EBTT © 2026
             </div>
             """,
             unsafe_allow_html=True,
@@ -1173,13 +1163,10 @@ def pagina_home(df, df_modelo, resultados_modelo):
             </div>
             <p>
                 Este dashboard foi desenvolvido para auxiliar instituições de ensino do
-                <b>Ensino Básico, Técnico e Tecnológico (EBTT)</b> na identificação precoce
-                de estudantes em risco de evasão acadêmica.
+                <b>Ensino Básico, Técnico e Tecnológico (EBTT)</b> no apoio à predição de reprovação de estudantes.
             </p>
             <p>
-                Através da análise de dados educacionais e do uso de técnicas de
-                <b>Machine Learning</b>, é possível prever com maior precisão quais alunos têm
-                maior probabilidade de abandonar os estudos, permitindo intervenções pedagógicas direcionadas.
+                A partir de dados institucionais e do uso de técnicas de <b>aprendizado de máquina</b>, o dashboard busca apoiar a identificação de estudantes com maior probabilidade de reprovação, contribuindo para o monitoramento acadêmico e para ações de apoio à gestão.
             </p>
         </div>
         """,
@@ -1196,12 +1183,12 @@ def pagina_home(df, df_modelo, resultados_modelo):
                     <i class="bi bi-database-fill-gear"></i>
                     <span>Análise de Dados</span>
                 </div>
-                <p class="muted-note">Explore o dataset completo de matrículas</p>
+                <p class="muted-note">Explore os resultados estatísticos sobre aprovação e reprovação</p>
                 <ul>
-                    <li>Visualização de dados acadêmicos</li>
-                    <li>Estatísticas descritivas</li>
-                    <li>Taxa de evasão por situação</li>
-                    <li>Distribuição por variáveis</li>
+                    <li>Comparação entre aprovados e reprovados</li>
+                    <li>Ranking de cursos</li>
+                    <li>Ranking de disciplinas</li>
+                    <li>Série temporal da reprovação</li>
                 </ul>
             </div>
             """,
@@ -1219,7 +1206,7 @@ def pagina_home(df, df_modelo, resultados_modelo):
                 <p class="muted-note">Gráficos interativos e insights visuais</p>
                 <ul>
                     <li>Gráfico por situação acadêmica</li>
-                    <li>Comparação evasão vs não evasão</li>
+                    <li>Comparação aprovação vs reprovação</li>
                     <li>Distribuição por ano de ingresso</li>
                     <li>Análises comparativas</li>
                 </ul>
@@ -1237,7 +1224,7 @@ def pagina_home(df, df_modelo, resultados_modelo):
                 <i class="bi bi-cpu-fill"></i>
                 <span>Modelo de Machine Learning</span>
             </div>
-            <p><b>Previsão inteligente de risco de evasão</b></p>
+            <p><b>Predição inteligente do risco de reprovação</b></p>
         """,
         unsafe_allow_html=True,
     )
@@ -1302,11 +1289,11 @@ def pagina_home(df, df_modelo, resultados_modelo):
             </div>
             <p>
                 Navegue pelas seções no menu lateral para explorar os dados, visualizar gráficos
-                e realizar previsões de risco de evasão para estudantes específicos.
+                e realizar previsões do risco de reprovação para estudantes específicos.
             </p>
             <p>
-                <b>Dica:</b> Use a seção <b>“Previsão de Evasão”</b> para simular cenários
-                e identificar estudantes que necessitam de acompanhamento prioritário.
+                <b>Dica:</b> A aba <b>Análise de Dados</b> lê diretamente os CSVs processados
+                em <b>estatistica_descritiva/resultado</b>.
             </p>
         </div>
         """,
@@ -1317,69 +1304,47 @@ def pagina_home(df, df_modelo, resultados_modelo):
 
 
 # =========================================================
-# ANALYSIS
+# ANÁLISE DE DADOS
 # =========================================================
-def metric_card_html(titulo, icone, valor, subtitulo, classe):
-    return dedent(f"""
-    <div class="analytics-metric-card {classe}">
-        <div class="analytics-metric-head">
-            <span>{titulo}</span>
-            <i class="bi {icone}"></i>
-        </div>
-        <div class="analytics-metric-value">{valor}</div>
-        <div class="analytics-metric-sub">{subtitulo}</div>
-    </div>
-    """)
-
-
-def status_card_html(situacao, qtd, pct, classe):
-    return dedent(f"""
-    <div class="status-card {classe}">
-        <div>
-            <span class="status-badge">{situacao}</span>
-            <span class="status-share">{pct:.1f}%</span>
-        </div>
-        <div class="status-value">{fmt_int_br(qtd)}</div>
-        <div class="status-label">alunos</div>
-    </div>
-    """)
-
-
 def pagina_analise(df, df_modelo):
     h1_dashboard()
 
     st.markdown(
-        dedent("""
+        """
         <div class="section-title">
             <i class="bi bi-database-fill-check icon-inline"></i>Análise de Dados
         </div>
-        """),
+        """,
         unsafe_allow_html=True,
     )
 
-    total_alunos = len(df)
+    resultados = carregar_resultados_analise()
+    comp = resultados["comparacao"]
+    ranking_cursos = resultados["ranking_cursos"]
+    ranking_disciplinas = resultados["ranking_disciplinas"]
+    serie_temporal = preparar_serie_temporal(resultados["serie_temporal"])
 
-    if "status_discente" in df.columns:
-        status_series = df["status_discente"].astype(str).str.strip()
-        status_evasao_ampla = {
-            "CANCELADO", "TRANCADO", "DESISTENCIA", "DESISTÊNCIA", "EVADIDO", "ABANDONO"
-        }
-        evadidos = status_series.str.upper().isin(status_evasao_ampla).sum()
-        taxa_evasao = (evadidos / total_alunos * 100) if total_alunos > 0 else 0
-    else:
-        status_series = pd.Series(dtype=str)
-        evadidos = 0
-        taxa_evasao = 0
+    if all(x is None for x in [comp, ranking_cursos, ranking_disciplinas, serie_temporal]):
+        st.error(f"Nenhum CSV foi encontrado em: {RESULTADO_DIR}")
+        footer()
+        return
 
-    c1, c2, c3 = st.columns(3)
+    media_aprov = extrair_valor_comparacao(comp, "media_geral", "Aprovados")
+    media_reprov = extrair_valor_comparacao(comp, "media_geral", "Reprovados")
+    ch_pendente_diff = extrair_valor_comparacao(comp, "ch_pendente", "Diferença")
+
+    total_cursos = len(ranking_cursos) if ranking_cursos is not None else 0
+    total_disciplinas = len(ranking_disciplinas) if ranking_disciplinas is not None else 0
+
+    c1, c2, c3, c4 = st.columns(4)
 
     with c1:
         st.markdown(
             metric_card_html(
-                "Total de Alunos",
-                "bi-people-fill",
-                fmt_int_br(total_alunos),
-                "Registros no dataset",
+                "Média Geral Aprovados",
+                "bi-mortarboard-fill",
+                fmt_float_br(media_aprov, 2) if pd.notna(media_aprov) else "-",
+                "comparacao_aprov_reprov.csv",
                 "metric-blue",
             ),
             unsafe_allow_html=True,
@@ -1388,10 +1353,10 @@ def pagina_analise(df, df_modelo):
     with c2:
         st.markdown(
             metric_card_html(
-                "Alunos Evadidos",
-                "bi-activity",
-                fmt_int_br(evadidos),
-                "Desistência, cancelamento e trancamento",
+                "Média Geral Reprovados",
+                "bi-exclamation-triangle-fill",
+                fmt_float_br(media_reprov, 2) if pd.notna(media_reprov) else "-",
+                "comparacao_aprov_reprov.csv",
                 "metric-red",
             ),
             unsafe_allow_html=True,
@@ -1400,115 +1365,244 @@ def pagina_analise(df, df_modelo):
     with c3:
         st.markdown(
             metric_card_html(
-                "Taxa de Evasão",
-                "bi-graph-up-arrow",
-                f"{taxa_evasao:.1f}%",
-                "Percentual de evasão total",
+                "Diferença CH Pendente",
+                "bi-hourglass-split",
+                fmt_float_br(ch_pendente_diff, 2) if pd.notna(ch_pendente_diff) else "-",
+                "Aprovados vs reprovados",
                 "metric-yellow",
+            ),
+            unsafe_allow_html=True,
+        )
+
+    with c4:
+        st.markdown(
+            metric_card_html(
+                "Cursos no Ranking",
+                "bi-journal-richtext",
+                fmt_int_br(total_cursos),
+                f"Disciplinas: {fmt_int_br(total_disciplinas)}",
+                "metric-green",
             ),
             unsafe_allow_html=True,
         )
 
     st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
 
-    if "status_discente" in df.columns:
-        dist = (
-            status_series.value_counts(dropna=False)
-            .rename_axis("situacao")
-            .reset_index(name="qtd")
-        )
-        dist["pct"] = dist["qtd"] / dist["qtd"].sum() * 100
+    cursos = None
+    disciplinas = None
 
-        st.markdown(
-            dedent("""
-            <div class="analytics-panel">
-                <div class="analytics-panel-title">
-                    <i class="bi bi-collection-fill"></i>
-                    <span>Distribuição por Situação</span>
+    col_chart_curso, col_chart_disc = st.columns(2)
+
+    with col_chart_curso:
+        if ranking_cursos is not None and not ranking_cursos.empty:
+            st.markdown(
+                """
+                <div class="analytics-panel">
+                    <div class="analytics-panel-title">
+                        <i class="bi bi-bar-chart-fill"></i>
+                        <span>Top Cursos por Taxa de Reprovação</span>
+                    </div>
+                    <div class="analytics-panel-subtitle">
+                        Ranking dos cursos com maior taxa de reprovação
+                    </div>
                 </div>
-                <div class="analytics-panel-subtitle">
-                    Quantidade de alunos em cada situação de matrícula
+                """,
+                unsafe_allow_html=True,
+            )
+
+            cursos = ranking_cursos.copy()
+            if "taxa_reprov" in cursos.columns:
+                cursos["taxa_reprov"] = pd.to_numeric(cursos["taxa_reprov"], errors="coerce")
+            if "n" in cursos.columns:
+                cursos["n"] = pd.to_numeric(cursos["n"], errors="coerce")
+
+            cursos = cursos.sort_values("taxa_reprov", ascending=False).head(10).copy()
+            cursos["curso_nome_curto"] = cursos["curso_nome"].astype(str).apply(
+                lambda x: x if len(x) <= 55 else x[:55] + "..."
+            )
+
+            cursos_plot = cursos.sort_values("taxa_reprov", ascending=True).copy()
+
+            fig_cursos = px.bar(
+                cursos_plot,
+                x="taxa_reprov",
+                y="curso_nome_curto",
+                orientation="h",
+                text="taxa_reprov",
+            )
+            fig_cursos.update_traces(
+                texttemplate="%{text:.1%}",
+                hovertemplate="<b>%{customdata[0]}</b><br>Taxa de reprovação: %{x:.1%}<extra></extra>",
+                customdata=cursos_plot[["curso_nome"]],
+            )
+            fig_cursos.update_layout(
+                height=450,
+                paper_bgcolor="#FFFFFF",
+                plot_bgcolor="#FFFFFF",
+                margin=dict(l=10, r=10, t=10, b=10),
+                xaxis_title="Taxa de Reprovação",
+                yaxis_title="",
+                showlegend=False,
+                yaxis=dict(tickfont=dict(color="#000000")),
+                xaxis=dict(tickfont=dict(color="#000000"), title_font=dict(color="#000000")),
+            )
+            st.plotly_chart(fig_cursos, use_container_width=True, config={"displayModeBar": False})
+
+    with col_chart_disc:
+        if ranking_disciplinas is not None and not ranking_disciplinas.empty:
+            st.markdown(
+                """
+                <div class="analytics-panel">
+                    <div class="analytics-panel-title">
+                        <i class="bi bi-bar-chart-steps"></i>
+                        <span>Top Disciplinas por Taxa de Reprovação</span>
+                    </div>
+                    <div class="analytics-panel-subtitle">
+                        Ranking das disciplinas com maior taxa de reprovação
+                    </div>
                 </div>
-            </div>
-            """),
-            unsafe_allow_html=True,
-        )
+                """,
+                unsafe_allow_html=True,
+            )
 
-        cards = []
-        for _, row in dist.iterrows():
-            situacao = str(row["situacao"])
-            qtd = int(row["qtd"])
-            pct = float(row["pct"])
-            classe = classe_status_card(situacao)
-            cards.append((situacao, qtd, pct, classe))
+            disciplinas = ranking_disciplinas.copy()
+            if "taxa_reprov" in disciplinas.columns:
+                disciplinas["taxa_reprov"] = pd.to_numeric(disciplinas["taxa_reprov"], errors="coerce")
+            if "n" in disciplinas.columns:
+                disciplinas["n"] = pd.to_numeric(disciplinas["n"], errors="coerce")
 
-        for i in range(0, len(cards), 3):
-            cols = st.columns(3)
-            bloco = cards[i:i + 3]
+            disciplinas = disciplinas.sort_values("taxa_reprov", ascending=False).head(10).copy()
 
-            for col, (situacao, qtd, pct, classe) in zip(cols, bloco):
-                with col:
-                    st.markdown(
-                        status_card_html(situacao, qtd, pct, classe),
-                        unsafe_allow_html=True,
+            nome_col_disc = None
+            for cand in ["nome_componente_curricular", "nome_componete_curricular"]:
+                if cand in disciplinas.columns:
+                    nome_col_disc = cand
+                    break
+
+            if nome_col_disc is None:
+                st.warning("A coluna com o nome da disciplina não foi encontrada em ranking_disciplinas.csv.")
+            else:
+                disciplinas["nome_disciplina_curto"] = disciplinas[nome_col_disc].astype(str).apply(
+                    lambda x: x if len(x) <= 50 else x[:50] + "..."
+                )
+
+                disciplinas_plot = disciplinas.sort_values("taxa_reprov", ascending=True).copy()
+
+                fig_disciplinas = px.bar(
+                    disciplinas_plot,
+                    x="taxa_reprov",
+                    y="nome_disciplina_curto",
+                    orientation="h",
+                    text="taxa_reprov",
+                )
+                fig_disciplinas.update_traces(
+                    texttemplate="%{text:.1%}",
+                    hovertemplate="<b>%{customdata[0]}</b><br>Taxa de reprovação: %{x:.1%}<extra></extra>",
+                    customdata=disciplinas_plot[[nome_col_disc]],
+                )
+                fig_disciplinas.update_layout(
+                    height=450,
+                    paper_bgcolor="#FFFFFF",
+                    plot_bgcolor="#FFFFFF",
+                    margin=dict(l=10, r=10, t=10, b=10),
+                    xaxis_title="Taxa de Reprovação",
+                    yaxis_title="",
+                    showlegend=False,
+                    yaxis=dict(tickfont=dict(color="#000000")),
+                    xaxis=dict(tickfont=dict(color="#000000"), title_font=dict(color="#000000")),
+                )
+                st.plotly_chart(fig_disciplinas, use_container_width=True, config={"displayModeBar": False})
+
+    if serie_temporal is not None and not serie_temporal.empty:
+        col_serie, col_pizza = st.columns(2)
+
+        with col_serie:
+            st.markdown(
+                """
+                <div class="analytics-panel">
+                    <div class="analytics-panel-title">
+                        <i class="bi bi-graph-up-arrow"></i>
+                        <span>Série Temporal da Reprovação</span>
+                    </div>
+                    <div class="analytics-panel-subtitle">
+                        Evolução da taxa de reprovação ao longo dos períodos
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            fig_serie = go.Figure()
+            fig_serie.add_trace(
+                go.Scatter(
+                    x=serie_temporal["ano_periodo"],
+                    y=serie_temporal["reprovado_pct"],
+                    mode="lines+markers",
+                    name="Reprovação (%)",
+                    hovertemplate="<b>%{x}</b><br>Reprovação: %{y:.2f}%<extra></extra>",
+                )
+            )
+            fig_serie.update_layout(
+                height=360,
+                paper_bgcolor="#FFFFFF",
+                plot_bgcolor="#FFFFFF",
+                margin=dict(l=25, r=20, t=10, b=40),
+                xaxis_title="Ano/Período",
+                yaxis_title="Taxa de Reprovação (%)",
+                showlegend=False,
+            )
+            st.plotly_chart(fig_serie, use_container_width=True, config={"displayModeBar": False})
+
+        with col_pizza:
+            st.markdown(
+                """
+                <div class="analytics-panel">
+                    <div class="analytics-panel-title">
+                        <i class="bi bi-pie-chart-fill"></i>
+                        <span>Taxa de Aprovação vs Reprovação</span>
+                    </div>
+                    <div class="analytics-panel-subtitle">
+                        Distribuição no período mais recente da série temporal
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            ultimo = serie_temporal.iloc[-1]
+            taxa_reprov = float(ultimo["reprovado"])
+            taxa_aprov = float(ultimo["aprovado"])
+
+            fig_pizza = go.Figure(
+                data=[
+                    go.Pie(
+                        labels=["Aprovação", "Reprovação"],
+                        values=[taxa_aprov, taxa_reprov],
+                        textinfo="label+percent",
+                        hovertemplate="<b>%{label}</b><br>Taxa: %{percent}<extra></extra>",
                     )
-
-    preview_cols_prioridade = [
-        "id_discente",
-        "status_discente",
-        "media_geral",
-        "faixa_renda_familiar",
-        "ano_ingresso",
-        "alvo_evasao",
-    ]
-    preview_cols = [c for c in preview_cols_prioridade if c in df.columns]
-
-    preview_df = df.copy()
-    if "alvo_evasao" in preview_df.columns:
-        preview_df["alvo_evasao"] = preview_df["alvo_evasao"].map({1: "Sim", 0: "Não"})
-
-    st.markdown(
-        dedent("""
-        <div class="analytics-panel">
-            <div class="analytics-panel-title">
-                <i class="bi bi-table"></i>
-                <span>Preview do Dataset</span>
-            </div>
-            <div class="analytics-panel-subtitle">
-                Primeiras 10 linhas da base de matrículas
-            </div>
-        </div>
-        """),
-        unsafe_allow_html=True,
-    )
-
-    st.caption(f"Total de registros: {fmt_int_br(len(df))}")
-
-    if preview_cols:
-        st.dataframe(
-            preview_df[preview_cols].head(10),
-            use_container_width=True,
-            hide_index=True,
-        )
-    else:
-        st.dataframe(
-            preview_df.head(10),
-            use_container_width=True,
-            hide_index=True,
-        )
+                ]
+            )
+            fig_pizza.update_layout(
+                height=360,
+                paper_bgcolor="#FFFFFF",
+                margin=dict(l=20, r=20, t=10, b=10),
+                showlegend=True,
+            )
+            st.plotly_chart(fig_pizza, use_container_width=True, config={"displayModeBar": False})
 
     footer()
 
 
 # =========================================================
-# CHARTS
+# GRÁFICOS
 # =========================================================
 def pagina_graficos(df):
     st.markdown(
-        dedent("""
+        """
         <div class="viz-page-title">Gráficos e Visualizações</div>
-        <div class="viz-page-subtitle">Análise visual dos dados de evasão acadêmica</div>
-        """),
+        <div class="viz-page-subtitle">Análise visual dos dados de reprovação acadêmica</div>
+        """,
         unsafe_allow_html=True,
     )
 
@@ -1525,65 +1619,32 @@ def pagina_graficos(df):
         .reset_index(name="Quantidade")
     )
 
-    cores_barras = [
-        "#27579B", "#37A0CF", "#3E8A3E", "#E7AE49",
-        "#7F5AE6", "#E04499", "#1FB686", "#718096", "#A0AEC0",
-    ]
-
     status_evasao = {"CANCELADO", "TRANCADO", "DESISTENCIA", "DESISTÊNCIA", "EVADIDO", "ABANDONO"}
     evadidos = int(status_limpo.str.upper().isin(status_evasao).sum())
     nao_evadidos = int(len(df) - evadidos)
 
     with st.container(border=True):
         st.markdown(
-            dedent("""
+            """
             <div class="chart-card-title">
                 <i class="bi bi-bar-chart-line-fill"></i>
                 <span>Distribuição por Situação de Matrícula</span>
             </div>
             <div class="chart-card-subtitle">Quantidade de alunos em cada situação</div>
-            """),
+            """,
             unsafe_allow_html=True,
         )
 
-        fig_bar = go.Figure()
-        fig_bar.add_trace(
-            go.Bar(
-                x=status_df["Situação"],
-                y=status_df["Quantidade"],
-                name="Quantidade de Alunos",
-                marker=dict(
-                    color=cores_barras[:len(status_df)],
-                    line=dict(color="#FFFFFF", width=1.2),
-                ),
-                hovertemplate="<b>%{x}</b><br>Quantidade: %{y}<extra></extra>",
-            )
-        )
-
+        fig_bar = px.bar(status_df, x="Situação", y="Quantidade", text="Quantidade")
         fig_bar.update_layout(
             height=350,
             paper_bgcolor="#FFFFFF",
             plot_bgcolor="#FFFFFF",
             margin=dict(l=25, r=20, t=10, b=70),
-            showlegend=True,
-            legend=dict(
-                orientation="h", yanchor="top", y=-0.18,
-                xanchor="center", x=0.5, title=None, font=dict(size=12),
-            ),
-            xaxis=dict(
-                title=None, tickangle=-45,
-                showgrid=True, gridcolor="#E9EEF5", zeroline=False,
-                tickfont=dict(size=11, color="#6B7280"),
-            ),
-            yaxis=dict(
-                title=None, showgrid=True, gridcolor="#E9EEF5",
-                zeroline=False, rangemode="tozero",
-                tickfont=dict(size=11, color="#6B7280"),
-            ),
-            font=dict(family="sans-serif", color="#334155"),
+            xaxis_title="",
+            yaxis_title="",
         )
-
-        st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False, "responsive": True})
+        st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False})
 
     st.markdown("<div class='chart-gap-top'></div>", unsafe_allow_html=True)
 
@@ -1592,57 +1653,67 @@ def pagina_graficos(df):
     with col1:
         with st.container(border=True):
             st.markdown(
-                dedent("""
+                """
                 <div class="chart-card-title">
                     <i class="bi bi-pie-chart-fill"></i>
-                    <span>Evasão vs Não Evasão</span>
+                    <span>Reprovação vs Aprovação</span>
                 </div>
-                <div class="chart-card-subtitle">Proporção de alunos evadidos</div>
-                """),
+                <div class="chart-card-subtitle">Proporção entre reprovação e aprovação</div>
+                """,
                 unsafe_allow_html=True,
             )
 
-            fig_pie = go.Figure(
-                data=[
-                    go.Pie(
-                        labels=["Não Evadidos", "Evadidos"],
-                        values=[nao_evadidos, evadidos],
-                        sort=False,
-                        textinfo="label+percent",
-                        textposition="outside",
-                        marker=dict(
-                            colors=["#3E7F3C", "#F44343"],
-                            line=dict(color="#FFFFFF", width=2),
-                        ),
-                        hovertemplate="<b>%{label}</b><br>Quantidade: %{value}<br>%{percent}<extra></extra>",
-                    )
-                ]
+            total_alunos = nao_evadidos + evadidos
+            taxa_reprovacao = (evadidos / total_alunos) if total_alunos > 0 else 0.0
+
+            fig_pie = go.Figure()
+
+            fig_pie.add_trace(
+                go.Pie(
+                    values=[taxa_reprovacao, 1 - taxa_reprovacao],
+                    labels=["Reprovados", "Demais"],
+                    hole=0.78,
+                    sort=False,
+                    direction="clockwise",
+                    textinfo="none",
+                    hoverinfo="skip",
+                    marker=dict(
+                        colors=["#C87412", "#E5E7EB"],
+                        line=dict(color="#FFFFFF", width=2),
+                    ),
+                    showlegend=False,
+                )
+            )
+
+            fig_pie.add_annotation(
+                text=f"<b>{taxa_reprovacao * 100:.1f}%</b><br><span style='font-size:16px;'>Reprovação</span>",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font=dict(size=28, color="#000000"),
+                align="center",
             )
 
             fig_pie.update_layout(
                 height=320,
                 paper_bgcolor="#FFFFFF",
-                margin=dict(l=20, r=20, t=10, b=50),
-                showlegend=True,
-                legend=dict(
-                    orientation="h", yanchor="top", y=-0.08,
-                    xanchor="center", x=0.5, title=None, font=dict(size=12),
-                ),
-                font=dict(family="sans-serif", color="#334155"),
+                plot_bgcolor="#FFFFFF",
+                margin=dict(l=10, r=10, t=10, b=10),
+                showlegend=False,
             )
 
-            st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar": False, "responsive": True})
+            st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar": False})
 
     with col2:
         with st.container(border=True):
             st.markdown(
-                dedent("""
+                """
                 <div class="chart-card-title">
                     <i class="bi bi-graph-up-arrow"></i>
-                    <span>Evolução da Taxa de Evasão</span>
+                    <span>Evolução da Taxa de Reprovação</span>
                 </div>
-                <div class="chart-card-subtitle">Taxa de evasão por ano de ingresso</div>
-                """),
+                <div class="chart-card-subtitle">Taxa de reprovação por ano de ingresso</div>
+                """,
                 unsafe_allow_html=True,
             )
 
@@ -1657,44 +1728,16 @@ def pagina_graficos(df):
                     .sort_values("ano_ingresso")
                 )
                 evol_df["taxa_pct"] = evol_df["evasao_flag"] * 100
-                ymax = max(80, float(evol_df["taxa_pct"].max()) * 1.15 if len(evol_df) else 80)
 
-                fig_line = go.Figure()
-                fig_line.add_trace(
-                    go.Scatter(
-                        x=evol_df["ano_ingresso"],
-                        y=evol_df["taxa_pct"],
-                        mode="lines+markers",
-                        name="Taxa de Evasão (%)",
-                        line=dict(color="#E7AE49", width=2.5),
-                        marker=dict(color="#E7AE49", size=8, line=dict(color="#E7AE49", width=1)),
-                        hovertemplate="<b>Ano %{x}</b><br>Taxa: %{y:.1f}%<extra></extra>",
-                    )
-                )
-
+                fig_line = px.line(evol_df, x="ano_ingresso", y="taxa_pct", markers=True)
                 fig_line.update_layout(
                     height=320,
                     paper_bgcolor="#FFFFFF",
                     plot_bgcolor="#FFFFFF",
-                    margin=dict(l=25, r=15, t=10, b=35),
-                    showlegend=True,
-                    legend=dict(
-                        orientation="h", yanchor="top", y=-0.12,
-                        xanchor="center", x=0.5, title=None, font=dict(size=12),
-                    ),
-                    xaxis=dict(
-                        title=None, showgrid=True, gridcolor="#E9EEF5",
-                        zeroline=False, tickfont=dict(size=11, color="#6B7280"),
-                    ),
-                    yaxis=dict(
-                        title="Taxa (%)", showgrid=True, gridcolor="#E9EEF5", zeroline=False,
-                        range=[0, ymax], tickfont=dict(size=11, color="#6B7280"),
-                        title_font=dict(size=12, color="#6B7280"),
-                    ),
-                    font=dict(family="sans-serif", color="#334155"),
+                    xaxis_title="",
+                    yaxis_title="Taxa (%)",
                 )
-
-                st.plotly_chart(fig_line, use_container_width=True, config={"displayModeBar": False, "responsive": True})
+                st.plotly_chart(fig_line, use_container_width=True, config={"displayModeBar": False})
             else:
                 st.info("A coluna 'ano_ingresso' não está disponível para montar a série temporal.")
 
@@ -1702,7 +1745,7 @@ def pagina_graficos(df):
 
 
 # =========================================================
-# PREDICTION
+# PREVISÃO
 # =========================================================
 def pagina_previsao(df, df_modelo, resultados_modelo):
     h1_dashboard()
@@ -1710,7 +1753,7 @@ def pagina_previsao(df, df_modelo, resultados_modelo):
     st.markdown(
         """
         <div class="section-title">
-            <i class="bi bi-robot icon-inline"></i>Previsão de Evasão
+            <i class="bi bi-robot icon-inline"></i>Previsão de Reprovação
         </div>
         """,
         unsafe_allow_html=True,
@@ -1725,9 +1768,6 @@ def pagina_previsao(df, df_modelo, resultados_modelo):
     prec = format_pct(resultados_modelo["precision"])
     rec = format_pct(resultados_modelo["recall"])
 
-    # =====================================================
-    # BOX SUPERIOR - INFORMAÇÕES DO MODELO
-    # =====================================================
     with st.container(border=True):
         st.markdown(
             """
@@ -1799,9 +1839,6 @@ def pagina_previsao(df, df_modelo, resultados_modelo):
 
     st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
 
-    # =====================================================
-    # VALORES PADRÃO
-    # =====================================================
     opcoes_renda = (
         df["faixa_renda_familiar"].dropna().astype(str).sort_values().unique().tolist()
         if "faixa_renda_familiar" in df.columns
@@ -1827,9 +1864,6 @@ def pagina_previsao(df, df_modelo, resultados_modelo):
         st.session_state.pred_renda = renda_padrao
         st.session_state.pred_ano = int(ano_padrao)
 
-    # =====================================================
-    # DUAS COLUNAS
-    # =====================================================
     col_form, col_result = st.columns(2)
 
     with col_form:
@@ -1896,14 +1930,14 @@ def pagina_previsao(df, df_modelo, resultados_modelo):
             st.markdown(
                 """
                 <div class="pred-card-title">Resultado da Previsão</div>
-                <div class="pred-card-sub">Análise do risco de evasão</div>
+                <div class="pred-card-sub">Análise do risco de reprovação</div>
                 """,
                 unsafe_allow_html=True,
             )
 
             st.markdown(
                 f"""
-                <div class="pred-prob-label">Probabilidade de Evasão</div>
+                <div class="pred-prob-label">Probabilidade de Reprovação</div>
                 <div class="pred-prob-value">{prob * 100:.1f}%</div>
                 <div class="pred-progress">
                     <div class="pred-progress-fill" style="width: {prob * 100:.1f}%;"></div>
@@ -1952,8 +1986,8 @@ def pagina_previsao(df, df_modelo, resultados_modelo):
     st.markdown(
         """
         <div class="pred-note">
-            <b>Como interpretar:</b> O modelo calcula a probabilidade de evasão com base em padrões históricos.
-            Probabilidades acima de 60% indicam alto risco e requerem atenção prioritária.
+            <b>Como interpretar:</b> O modelo calcula a probabilidade de reprovação com base em padrões históricos.
+            Probabilidades acima de 60% indicam alto risco de reprovação e requerem atenção prioritária.
             Use estas previsões como ferramenta de apoio à decisão pedagógica, não como determinante absoluto.
         </div>
         """,
@@ -1988,9 +2022,7 @@ def main():
             pagina_home(df, df_modelo, resultados_modelo)
         elif pagina == "Análise de Dados":
             pagina_analise(df, df_modelo)
-        elif pagina == "Gráficos":
-            pagina_graficos(df)
-        elif pagina == "Previsão de Evasão":
+        elif pagina == "Previsão de Reprovação":
             pagina_previsao(df, df_modelo, resultados_modelo)
 
     except Exception as e:
