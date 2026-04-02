@@ -3,5 +3,6 @@ pandas
 numpy
 plotly
 joblib
-scikit-learn==1.6.1 
+scikit-learn
+xgboost
 streamlit-option-menu
