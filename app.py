@@ -6,6 +6,8 @@ from textwrap import dedent
 
 import numpy as np
 import pandas as pd
+import joblib
+import pickle
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
@@ -32,6 +34,7 @@ st.set_page_config(
 
 BASE_DIR = Path(__file__).resolve().parent
 RESULTADO_DIR = BASE_DIR / "estatistica_descritiva" / "resultado"
+MODELOS_DIR = BASE_DIR / "modelos_pickle"
 
 
 # =========================================================
@@ -719,6 +722,26 @@ def aplicar_css():
             div[data-baseweb="input"] > div {
                 border-radius: 8px !important;
             }
+
+            /* =====================================================
+               LEGENDAS / LABELS DOS CAMPOS
+            ===================================================== */
+            label,
+            .stSelectbox label,
+            .stNumberInput label,
+            .stCheckbox label,
+            .stTextInput label,
+            .stSlider label,
+            .stRadio label,
+            .stMultiSelect label,
+            div[data-testid="stWidgetLabel"],
+            div[data-testid="stWidgetLabel"] p,
+            div[data-testid="stWidgetLabel"] span,
+            .stCheckbox span,
+            .stCheckbox p {
+                color: #173153 !important;
+                opacity: 1 !important;
+            }
         </style>
         """,
         unsafe_allow_html=True,
@@ -922,6 +945,145 @@ def treinar_modelo(df_modelo):
     }
 
     return resultados, None
+
+
+
+
+@st.cache_resource
+def carregar_modelos_pickle():
+    arquivos_modelo = {
+        "Logit": MODELOS_DIR / "logit.pkl",
+        "Random Forest": MODELOS_DIR / "random_forest.pkl",
+        "XGBoost": MODELOS_DIR / "xgboost.pkl",
+    }
+
+    modelos = {}
+    erros = {}
+
+    for nome, caminho in arquivos_modelo.items():
+        if not caminho.exists():
+            erros[nome] = f"Arquivo não encontrado: {caminho.name}"
+            continue
+
+        try:
+            with open(caminho, "rb") as f:
+                modelos[nome] = pickle.load(f)
+            continue
+        except Exception:
+            pass
+
+        try:
+            modelos[nome] = joblib.load(caminho)
+        except Exception as e:
+            erros[nome] = f"Falha ao carregar {caminho.name}: {e}"
+
+    return modelos, erros, arquivos_modelo
+
+
+def extrair_features_modelo(modelo):
+    candidatos = [
+        modelo,
+        getattr(modelo, "best_estimator_", None),
+        getattr(getattr(modelo, "named_steps", {}), "get", lambda *_: None)("classifier"),
+    ]
+
+    for cand in candidatos:
+        if cand is not None and hasattr(cand, "feature_names_in_"):
+            return [str(x) for x in list(cand.feature_names_in_)]
+
+    return None
+
+
+def set_feature_value(X, feature_names, feature_name, value):
+    idxs = [i for i, col in enumerate(feature_names) if col == feature_name]
+    if idxs:
+        X.iloc[0, idxs] = value
+
+
+def montar_input_pkl(
+    feature_names,
+    sexo,
+    estado_civil,
+    raca,
+    dummy_tecnico,
+    tem_laboratorio,
+    tem_ead,
+    faixa_renda,
+    ano_periodo,
+    reprov_ate_entao,
+    reprov_disc_ate_entao,
+    curso_id,
+    area_conhecimento,
+):
+    X = pd.DataFrame(np.zeros((1, len(feature_names))), columns=feature_names, dtype=float)
+
+    # Binárias/dummies diretas
+    set_feature_value(X, feature_names, "sexo_masculino", 1.0 if sexo == "Masculino" else 0.0)
+    set_feature_value(X, feature_names, "estado_civil_outro", 1.0 if estado_civil == "Outro" else 0.0)
+    set_feature_value(X, feature_names, "dummy_tecnico", 1.0 if dummy_tecnico else 0.0)
+    set_feature_value(X, feature_names, "tem_laboratorio", 1.0 if tem_laboratorio else 0.0)
+    set_feature_value(X, feature_names, "tem_ead", 1.0 if tem_ead else 0.0)
+
+    # Numéricas
+    try:
+        set_feature_value(X, feature_names, "ano_periodo", float(ano_periodo))
+    except Exception:
+        set_feature_value(X, feature_names, "ano_periodo", 0.0)
+
+    set_feature_value(X, feature_names, "reprov_ate_entao", float(reprov_ate_entao))
+    set_feature_value(X, feature_names, "reprov_disc_ate_entao", float(reprov_disc_ate_entao))
+
+    # Raça
+    mapa_raca = {
+        "Categoria de referência": None,
+        "Nan": "raca_declarada_nan",
+        "Não informado": "raca_declarada_nao_informado",
+        "Negra": "raca_declarada_negra",
+        "Outra": "raca_declarada_outra",
+    }
+    feat_raca = mapa_raca.get(raca)
+    if feat_raca:
+        set_feature_value(X, feature_names, feat_raca, 1.0)
+
+    # Faixa de renda
+    mapa_renda = {
+        "Categoria de referência": None,
+        "Até 1k": "faixa_renda_familiar_ate_1k",
+        "2k a 4k": "faixa_renda_familiar_2k_4k",
+        "4k a 8k": "faixa_renda_familiar_4k_8k",
+        "8k ou mais": "faixa_renda_familiar_8k_mais",
+        "Nan": "faixa_renda_familiar_nan",
+    }
+    feat_renda = mapa_renda.get(faixa_renda)
+    if feat_renda:
+        set_feature_value(X, feature_names, feat_renda, 1.0)
+
+    # Curso
+    if curso_id is not None:
+        set_feature_value(X, feature_names, f"id_curso_cursos_{curso_id}", 1.0)
+
+    # Área do conhecimento
+    if area_conhecimento is not None:
+        set_feature_value(X, feature_names, f"area_conhecimento_{area_conhecimento}", 1.0)
+
+    # Segurança extra
+    X = X.fillna(0.0)
+    return X
+
+
+def prever_probabilidade_pkl(modelo, X):
+    if hasattr(modelo, "predict_proba"):
+        proba = modelo.predict_proba(X)
+        if getattr(proba, "ndim", 1) == 2 and proba.shape[1] >= 2:
+            return float(proba[0, 1])
+        return float(proba[0])
+
+    if hasattr(modelo, "decision_function"):
+        score = float(modelo.decision_function(X)[0])
+        return float(1 / (1 + np.exp(-score)))
+
+    pred = float(modelo.predict(X)[0])
+    return max(0.0, min(1.0, pred))
 
 
 def format_pct(x):
@@ -1759,14 +1921,61 @@ def pagina_previsao(df, df_modelo, resultados_modelo):
         unsafe_allow_html=True,
     )
 
-    if resultados_modelo is None:
-        st.error("Não foi possível treinar o modelo com a base atual.")
+    modelos_pickle, erros_modelo, arquivos_modelo = carregar_modelos_pickle()
+
+    if not modelos_pickle:
+        st.error("Não foi possível carregar nenhum modelo .pkl da pasta modelos_pickle.")
+        if erros_modelo:
+            for nome, erro in erros_modelo.items():
+                st.warning(f"{nome}: {erro}")
         footer()
         return
 
-    acc = format_pct(resultados_modelo["accuracy"])
-    prec = format_pct(resultados_modelo["precision"])
-    rec = format_pct(resultados_modelo["recall"])
+    modelo_escolhido = st.selectbox(
+        "Selecione o modelo de previsão",
+        list(modelos_pickle.keys()),
+        index=0,
+    )
+
+    modelo = modelos_pickle[modelo_escolhido]
+    nome_arquivo_modelo = arquivos_modelo[modelo_escolhido].name
+    feature_names = extrair_features_modelo(modelo)
+
+    if feature_names is None:
+        st.error(f"O modelo {modelo_escolhido} não expõe feature_names_in_.")
+        footer()
+        return
+
+    # Derivação de opções a partir das features esperadas
+    curso_ids = []
+    for feat in feature_names:
+        if feat.startswith("id_curso_cursos_"):
+            cid = feat.replace("id_curso_cursos_", "")
+            if cid not in curso_ids:
+                curso_ids.append(cid)
+
+    area_opts = []
+    for feat in feature_names:
+        if feat.startswith("area_conhecimento_"):
+            area = feat.replace("area_conhecimento_", "")
+            if area not in area_opts:
+                area_opts.append(area)
+
+    # Períodos vindos da série temporal, quando existir
+    resultados = carregar_resultados_analise()
+    serie_temporal = preparar_serie_temporal(resultados["serie_temporal"])
+    periodo_labels = []
+    if serie_temporal is not None and not serie_temporal.empty and "ano_periodo" in serie_temporal.columns:
+        periodo_labels = serie_temporal["ano_periodo"].astype(str).dropna().unique().tolist()
+
+    if not periodo_labels:
+        periodo_labels = ["2024.1", "2024.2"]
+
+    def periodo_para_float(label):
+        try:
+            return float(str(label).replace(",", "."))
+        except Exception:
+            return 0.0
 
     with st.container(border=True):
         st.markdown(
@@ -1783,10 +1992,10 @@ def pagina_previsao(df, df_modelo, resultados_modelo):
 
         with t1:
             st.markdown(
-                """
+                f"""
                 <div class="pred-top-metric">
                     <div class="pred-top-metric-label">Algoritmo</div>
-                    <div class="pred-top-metric-value">Logistic Regression</div>
+                    <div class="pred-top-metric-value">{modelo_escolhido}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -1796,8 +2005,8 @@ def pagina_previsao(df, df_modelo, resultados_modelo):
             st.markdown(
                 f"""
                 <div class="pred-top-metric">
-                    <div class="pred-top-metric-label">Acurácia</div>
-                    <div class="pred-top-metric-value">{acc}</div>
+                    <div class="pred-top-metric-label">Arquivo</div>
+                    <div class="pred-top-metric-value">{nome_arquivo_modelo}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -1807,8 +2016,8 @@ def pagina_previsao(df, df_modelo, resultados_modelo):
             st.markdown(
                 f"""
                 <div class="pred-top-metric">
-                    <div class="pred-top-metric-label">Precisão</div>
-                    <div class="pred-top-metric-value">{prec}</div>
+                    <div class="pred-top-metric-label">Features esperadas</div>
+                    <div class="pred-top-metric-value">{len(feature_names)}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -1816,10 +2025,10 @@ def pagina_previsao(df, df_modelo, resultados_modelo):
 
         with t4:
             st.markdown(
-                f"""
+                """
                 <div class="pred-top-metric">
-                    <div class="pred-top-metric-label">Recall</div>
-                    <div class="pred-top-metric-value">{rec}</div>
+                    <div class="pred-top-metric-label">Tipo</div>
+                    <div class="pred-top-metric-value">PKL</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -1828,41 +2037,69 @@ def pagina_previsao(df, df_modelo, resultados_modelo):
         st.markdown(
             """
             <div class="pred-chip-wrap">
-                <div class="pred-chip-title">Variáveis Utilizadas:</div>
-                <span class="pred-chip">Média Geral</span>
-                <span class="pred-chip">Faixa de Renda Familiar</span>
-                <span class="pred-chip">Ano de Ingresso</span>
+                <div class="pred-chip-title">Variáveis do formulário usadas no vetor de previsão:</div>
+                <span class="pred-chip">Sexo</span>
+                <span class="pred-chip">Estado civil</span>
+                <span class="pred-chip">Raça</span>
+                <span class="pred-chip">Curso técnico</span>
+                <span class="pred-chip">Laboratório</span>
+                <span class="pred-chip">EAD</span>
+                <span class="pred-chip">Renda</span>
+                <span class="pred-chip">Ano/Período</span>
+                <span class="pred-chip">Reprovações acumuladas</span>
+                <span class="pred-chip">Curso</span>
+                <span class="pred-chip">Área</span>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
+    if erros_modelo:
+        with st.expander("Modelos não carregados"):
+            for nome, erro in erros_modelo.items():
+                st.write(f"**{nome}** — {erro}")
+
     st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
 
-    opcoes_renda = (
-        df["faixa_renda_familiar"].dropna().astype(str).sort_values().unique().tolist()
-        if "faixa_renda_familiar" in df.columns
-        else ["1 a 2 salários mínimos", "2 a 3 salários mínimos", "3 a 5 salários mínimos", "Acima de 5 salários mínimos"]
-    )
+    # Defaults
+    default_curso = curso_ids[0] if curso_ids else None
+    default_area = area_opts[0] if area_opts else None
+    default_periodo = periodo_labels[-1] if periodo_labels else "2024.2"
 
-    ano_min = int(pd.to_numeric(df["ano_ingresso"], errors="coerce").min()) if "ano_ingresso" in df.columns else 2019
-    ano_max = int(pd.to_numeric(df["ano_ingresso"], errors="coerce").max()) if "ano_ingresso" in df.columns else 2025
-    media_padrao = float(pd.to_numeric(df["media_geral"], errors="coerce").median()) if "media_geral" in df.columns else 7.0
-    renda_padrao = opcoes_renda[0] if len(opcoes_renda) else "1 a 2 salários mínimos"
-    ano_padrao = int(pd.to_numeric(df["ano_ingresso"], errors="coerce").median()) if "ano_ingresso" in df.columns else 2022
+    if st.session_state.get("pred_model_name") != modelo_escolhido:
+        st.session_state.pred_model_name = modelo_escolhido
+        st.session_state.pred_prob = 0.0
+        st.session_state.pred_form = {
+            "sexo": "Feminino",
+            "estado_civil": "Solteiro(a)",
+            "raca": "Categoria de referência",
+            "dummy_tecnico": False,
+            "tem_laboratorio": False,
+            "tem_ead": False,
+            "faixa_renda": "Categoria de referência",
+            "ano_periodo": default_periodo,
+            "reprov_ate_entao": 0,
+            "reprov_disc_ate_entao": 0,
+            "curso_id": default_curso,
+            "area_conhecimento": default_area,
+        }
 
-    if "pred_prob" not in st.session_state:
-        entrada_inicial = montar_entrada_previsao(
-            df=df,
-            features=resultados_modelo["features"],
-            media_geral=media_padrao,
-            faixa_renda=renda_padrao,
-            ano_ingresso=ano_padrao,
+        X_default = montar_input_pkl(
+            feature_names=feature_names,
+            sexo=st.session_state.pred_form["sexo"],
+            estado_civil=st.session_state.pred_form["estado_civil"],
+            raca=st.session_state.pred_form["raca"],
+            dummy_tecnico=st.session_state.pred_form["dummy_tecnico"],
+            tem_laboratorio=st.session_state.pred_form["tem_laboratorio"],
+            tem_ead=st.session_state.pred_form["tem_ead"],
+            faixa_renda=st.session_state.pred_form["faixa_renda"],
+            ano_periodo=periodo_para_float(st.session_state.pred_form["ano_periodo"]),
+            reprov_ate_entao=st.session_state.pred_form["reprov_ate_entao"],
+            reprov_disc_ate_entao=st.session_state.pred_form["reprov_disc_ate_entao"],
+            curso_id=st.session_state.pred_form["curso_id"],
+            area_conhecimento=st.session_state.pred_form["area_conhecimento"],
         )
-        st.session_state.pred_prob = float(resultados_modelo["model"].predict_proba(entrada_inicial)[0, 1])
-        st.session_state.pred_media = float(round(media_padrao, 1))
-        st.session_state.pred_renda = renda_padrao
-        st.session_state.pred_ano = int(ano_padrao)
+        st.session_state.pred_prob = prever_probabilidade_pkl(modelo, X_default)
 
     col_form, col_result = st.columns(2)
 
@@ -1871,60 +2108,79 @@ def pagina_previsao(df, df_modelo, resultados_modelo):
             st.markdown(
                 """
                 <div class="pred-card-title">Dados do Estudante</div>
-                <div class="pred-card-sub">Informe os dados para realizar a previsão</div>
+                <div class="pred-card-sub">Preencha as variáveis compatíveis com o modelo .pkl</div>
                 """,
                 unsafe_allow_html=True,
             )
 
-            with st.form("form_previsao_estilo", clear_on_submit=False):
-                media_geral = st.slider(
-                    "Média Geral",
-                    min_value=0.0,
-                    max_value=10.0,
-                    value=float(st.session_state.pred_media),
-                    step=0.1,
+            with st.form("form_previsao_pkl", clear_on_submit=False):
+                c1, c2 = st.columns(2)
+                with c1:
+                    sexo = st.selectbox("Sexo", ["Feminino", "Masculino"], index=["Feminino", "Masculino"].index(st.session_state.pred_form["sexo"]))
+                    estado_civil = st.selectbox("Estado civil", ["Solteiro(a)", "Casado(a)", "Outro"], index=["Solteiro(a)", "Casado(a)", "Outro"].index(st.session_state.pred_form["estado_civil"]))
+                    raca = st.selectbox("Raça declarada", ["Categoria de referência", "Nan", "Não informado", "Negra", "Outra"], index=["Categoria de referência", "Nan", "Não informado", "Negra", "Outra"].index(st.session_state.pred_form["raca"]))
+                    faixa_renda = st.selectbox("Faixa de renda familiar", ["Categoria de referência", "Até 1k", "2k a 4k", "4k a 8k", "8k ou mais", "Nan"], index=["Categoria de referência", "Até 1k", "2k a 4k", "4k a 8k", "8k ou mais", "Nan"].index(st.session_state.pred_form["faixa_renda"]))
+                    ano_periodo = st.selectbox("Ano/Período", periodo_labels, index=periodo_labels.index(st.session_state.pred_form["ano_periodo"]) if st.session_state.pred_form["ano_periodo"] in periodo_labels else 0)
+
+                with c2:
+                    dummy_tecnico = st.checkbox("Curso técnico", value=st.session_state.pred_form["dummy_tecnico"])
+                    tem_laboratorio = st.checkbox("Tem laboratório", value=st.session_state.pred_form["tem_laboratorio"])
+                    tem_ead = st.checkbox("Tem EAD", value=st.session_state.pred_form["tem_ead"])
+                    reprov_ate_entao = st.number_input("Reprovações até então", min_value=0, step=1, value=int(st.session_state.pred_form["reprov_ate_entao"]))
+                    reprov_disc_ate_entao = st.number_input("Reprovações na disciplina até então", min_value=0, step=1, value=int(st.session_state.pred_form["reprov_disc_ate_entao"]))
+
+                curso_id = st.selectbox(
+                    "ID do curso",
+                    curso_ids if curso_ids else ["nan"],
+                    index=(curso_ids.index(st.session_state.pred_form["curso_id"]) if st.session_state.pred_form["curso_id"] in curso_ids else 0) if curso_ids else 0,
                 )
 
-                faixa_renda = st.selectbox(
-                    "Faixa de Renda Familiar",
-                    opcoes_renda,
-                    index=opcoes_renda.index(st.session_state.pred_renda) if st.session_state.pred_renda in opcoes_renda else 0,
+                area_conhecimento = st.selectbox(
+                    "Área do conhecimento",
+                    area_opts if area_opts else ["educacao"],
+                    index=(area_opts.index(st.session_state.pred_form["area_conhecimento"]) if st.session_state.pred_form["area_conhecimento"] in area_opts else 0) if area_opts else 0,
+                    format_func=lambda x: str(x).replace("_", " ").title(),
                 )
 
-                anos_disponiveis = list(range(ano_min, ano_max + 1))
-                ano_ingresso = st.selectbox(
-                    "Ano de Ingresso",
-                    anos_disponiveis,
-                    index=anos_disponiveis.index(st.session_state.pred_ano) if st.session_state.pred_ano in anos_disponiveis else 0,
-                )
-
-                submitted = st.form_submit_button(
-                    "🔍 Prever Risco de Evasão",
-                    use_container_width=True,
-                )
+                submitted = st.form_submit_button("🔍 Prever Risco de Reprovação", use_container_width=True)
 
             if submitted:
-                entrada_df = montar_entrada_previsao(
-                    df=df,
-                    features=resultados_modelo["features"],
-                    media_geral=media_geral,
+                st.session_state.pred_form = {
+                    "sexo": sexo,
+                    "estado_civil": estado_civil,
+                    "raca": raca,
+                    "dummy_tecnico": dummy_tecnico,
+                    "tem_laboratorio": tem_laboratorio,
+                    "tem_ead": tem_ead,
+                    "faixa_renda": faixa_renda,
+                    "ano_periodo": ano_periodo,
+                    "reprov_ate_entao": int(reprov_ate_entao),
+                    "reprov_disc_ate_entao": int(reprov_disc_ate_entao),
+                    "curso_id": curso_id,
+                    "area_conhecimento": area_conhecimento,
+                }
+
+                X_pred = montar_input_pkl(
+                    feature_names=feature_names,
+                    sexo=sexo,
+                    estado_civil=estado_civil,
+                    raca=raca,
+                    dummy_tecnico=dummy_tecnico,
+                    tem_laboratorio=tem_laboratorio,
+                    tem_ead=tem_ead,
                     faixa_renda=faixa_renda,
-                    ano_ingresso=ano_ingresso,
+                    ano_periodo=periodo_para_float(ano_periodo),
+                    reprov_ate_entao=reprov_ate_entao,
+                    reprov_disc_ate_entao=reprov_disc_ate_entao,
+                    curso_id=curso_id,
+                    area_conhecimento=area_conhecimento,
                 )
 
-                prob = float(resultados_modelo["model"].predict_proba(entrada_df)[0, 1])
-
-                st.session_state.pred_prob = prob
-                st.session_state.pred_media = float(media_geral)
-                st.session_state.pred_renda = str(faixa_renda)
-                st.session_state.pred_ano = int(ano_ingresso)
+                st.session_state.pred_prob = prever_probabilidade_pkl(modelo, X_pred)
 
     with col_result:
         prob = float(st.session_state.pred_prob)
         classe_texto, classe_css, recomendacao = classificacao_risco(prob)
-
-        ano_atual = pd.Timestamp.today().year
-        tempo_instituicao = max(0, ano_atual - int(st.session_state.pred_ano))
 
         with st.container(border=True):
             st.markdown(
@@ -1960,6 +2216,43 @@ def pagina_previsao(df, df_modelo, resultados_modelo):
                 f"""
                 <div class="pred-mini-box">
                     <div class="pred-mini-title">
+                        <i class="bi bi-cpu-fill"></i> &nbsp;Modelo utilizado:
+                    </div>
+                    <div class="pred-mini-text">{modelo_escolhido} ({nome_arquivo_modelo})</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            form = st.session_state.pred_form
+
+            st.markdown(
+                f"""
+                <div class="pred-mini-box pred-factors">
+                    <div class="pred-mini-title">Entradas utilizadas:</div>
+                    <ul>
+                        <li>Sexo: {form["sexo"]}</li>
+                        <li>Estado civil: {form["estado_civil"]}</li>
+                        <li>Raça: {form["raca"]}</li>
+                        <li>Curso técnico: {"Sim" if form["dummy_tecnico"] else "Não"}</li>
+                        <li>Tem laboratório: {"Sim" if form["tem_laboratorio"] else "Não"}</li>
+                        <li>Tem EAD: {"Sim" if form["tem_ead"] else "Não"}</li>
+                        <li>Faixa de renda: {form["faixa_renda"]}</li>
+                        <li>Ano/Período: {form["ano_periodo"]}</li>
+                        <li>Reprovações até então: {form["reprov_ate_entao"]}</li>
+                        <li>Reprovações na disciplina até então: {form["reprov_disc_ate_entao"]}</li>
+                        <li>ID do curso: {form["curso_id"]}</li>
+                        <li>Área: {str(form["area_conhecimento"]).replace("_", " ").title()}</li>
+                    </ul>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            st.markdown(
+                f"""
+                <div class="pred-mini-box">
+                    <div class="pred-mini-title">
                         <i class="bi bi-activity"></i> &nbsp;Recomendação:
                     </div>
                     <div class="pred-mini-text">{recomendacao}</div>
@@ -1968,34 +2261,17 @@ def pagina_previsao(df, df_modelo, resultados_modelo):
                 unsafe_allow_html=True,
             )
 
-            st.markdown(
-                f"""
-                <div class="pred-mini-box pred-factors">
-                    <div class="pred-mini-title">Fatores Analisados:</div>
-                    <ul>
-                        <li>Média Geral: {st.session_state.pred_media:.1f}</li>
-                        <li>Renda Familiar: {st.session_state.pred_renda}</li>
-                        <li>Ano de Ingresso: {st.session_state.pred_ano}</li>
-                        <li>Tempo na Instituição: {tempo_instituicao} anos</li>
-                    </ul>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
     st.markdown(
         """
         <div class="pred-note">
-            <b>Como interpretar:</b> O modelo calcula a probabilidade de reprovação com base em padrões históricos.
-            Probabilidades acima de 60% indicam alto risco de reprovação e requerem atenção prioritária.
-            Use estas previsões como ferramenta de apoio à decisão pedagógica, não como determinante absoluto.
+            <b>Como interpretar:</b> O formulário monta um vetor no formato exato esperado pelo arquivo .pkl.
+            A previsão exibida corresponde à probabilidade de reprovação calculada pelo modelo selecionado.
         </div>
         """,
         unsafe_allow_html=True,
     )
 
     footer()
-
 
 # =========================================================
 # MAIN
