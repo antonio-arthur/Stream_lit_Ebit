@@ -1,9 +1,9 @@
 streamlit
-pandas==2.2.3
-numpy==2.2.6
-scipy==1.15.3
+pandas
+numpy
+scipy
 scikit-learn
-joblib==1.4.2
+joblib
 xgboost==2.1.4
 plotly==6.0.1
-streamlit-option-menu==0.4.0
+streamlit-option-menu
