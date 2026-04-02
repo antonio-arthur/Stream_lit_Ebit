@@ -574,8 +574,39 @@ def aplicar_css():
 
             .pred-card-sub {
                 font-size: 0.85rem;
-                color: #9AA3AF !important;
+                color: #7A8798 !important;
                 margin-bottom: 0.9rem;
+            }
+
+            .pred-form-shell {
+                background: linear-gradient(180deg, #F8FBFF 0%, #FFFFFF 100%);
+                border: 1px solid #E3EDF7;
+                border-radius: 18px;
+                padding: 1rem 1rem 0.35rem 1rem;
+                margin-top: 0.35rem;
+                box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+            }
+
+            .pred-form-section-title {
+                display: flex;
+                align-items: center;
+                gap: 0.45rem;
+                font-size: 0.92rem;
+                font-weight: 800;
+                color: #24579B !important;
+                margin: 0.2rem 0 0.75rem 0;
+                padding-bottom: 0.45rem;
+                border-bottom: 1px solid #E8EFF7;
+            }
+
+            .pred-form-help {
+                font-size: 0.80rem;
+                color: #7A8798 !important;
+                margin: -0.15rem 0 0.75rem 0;
+            }
+
+            .pred-divider-space {
+                height: 0.2rem;
             }
 
             .pred-prob-label {
@@ -719,8 +750,63 @@ def aplicar_css():
             }
 
             div[data-baseweb="select"] > div,
-            div[data-baseweb="input"] > div {
-                border-radius: 8px !important;
+            div[data-baseweb="input"] > div,
+            div[data-baseweb="base-input"] > div {
+                background: #FFFFFF !important;
+                border-radius: 12px !important;
+                border: 1px solid #D7E3F1 !important;
+                box-shadow: 0 2px 8px rgba(25, 55, 99, 0.05) !important;
+                min-height: 46px !important;
+            }
+
+            div[data-baseweb="select"] * ,
+            div[data-baseweb="input"] * ,
+            div[data-baseweb="base-input"] * ,
+            div[data-baseweb="select"] span,
+            div[data-baseweb="select"] div,
+            div[data-baseweb="select"] input,
+            div[data-baseweb="input"] input,
+            div[data-baseweb="base-input"] input,
+            div[data-baseweb="select"] svg,
+            div[data-testid="stNumberInput"] input,
+            div[data-testid="stNumberInput"] div,
+            div[data-testid="stSelectbox"] div,
+            div[data-testid="stSelectbox"] span {
+                color: #173153 !important;
+                fill: #173153 !important;
+                -webkit-text-fill-color: #173153 !important;
+                opacity: 1 !important;
+            }
+
+            div[data-baseweb="select"] input::placeholder,
+            div[data-baseweb="input"] input::placeholder,
+            div[data-baseweb="base-input"] input::placeholder {
+                color: #6B7A90 !important;
+                -webkit-text-fill-color: #6B7A90 !important;
+                opacity: 1 !important;
+            }
+
+            div[data-testid="stNumberInput"] button {
+                color: #173153 !important;
+                background: #F6FAFF !important;
+                border-color: #D7E3F1 !important;
+            }
+
+            div[data-testid="stCheckbox"] {
+                background: #FFFFFF !important;
+                border: 1px solid #DCE6F2 !important;
+                border-radius: 12px !important;
+                padding: 0.45rem 0.7rem !important;
+                min-height: 50px !important;
+                display: flex !important;
+                align-items: center !important;
+                box-shadow: 0 2px 8px rgba(25, 55, 99, 0.04) !important;
+                margin-bottom: 0.35rem !important;
+            }
+
+            div[data-testid="stCheckbox"] label {
+                margin-bottom: 0 !important;
+                width: 100% !important;
             }
 
             /* =====================================================
@@ -953,25 +1039,22 @@ def treinar_modelo(df_modelo):
 def carregar_modelos_pickle():
     arquivos_modelo = {
         "Logit": MODELOS_DIR / "logit.pkl",
-        "Random Forest": MODELOS_DIR / "random_forest.pkl",
-        "XGBoost": MODELOS_DIR / "xgboost.pkl",
     }
 
     modelos = {}
     erros = {}
 
-    for nome, caminho in arquivos_modelo.items():
-        if not caminho.exists():
-            erros[nome] = f"Arquivo não encontrado: {caminho.name}"
-            continue
+    nome = "Logit"
+    caminho = arquivos_modelo[nome]
 
-        try:
-            with open(caminho, "rb") as f:
-                modelos[nome] = pickle.load(f)
-            continue
-        except Exception:
-            pass
+    if not caminho.exists():
+        erros[nome] = f"Arquivo não encontrado: {caminho.name}"
+        return modelos, erros, arquivos_modelo
 
+    try:
+        with open(caminho, "rb") as f:
+            modelos[nome] = pickle.load(f)
+    except Exception:
         try:
             modelos[nome] = joblib.load(caminho)
         except Exception as e:
@@ -1205,6 +1288,11 @@ def preparar_serie_temporal(df):
     df["reprovado"] = pd.to_numeric(df["reprovado"], errors="coerce")
 
     df = df.dropna(subset=["ano", "periodo", "reprovado"]).copy()
+    df = df[(df["ano"] > 2015) | ((df["ano"] == 2015) & (df["periodo"] >= 1))].copy()
+
+    if df.empty:
+        return None
+
     df = df.sort_values(["ano", "periodo"]).reset_index(drop=True)
 
     df["reprovado"] = df["reprovado"].clip(lower=0, upper=1)
@@ -1265,8 +1353,8 @@ def sidebar_controles():
 
         pagina = option_menu(
             menu_title=None,
-            options=["Home", "Análise de Dados", "Previsão de Reprovação"],
-            icons=["house-door-fill", "bar-chart-fill", "robot"],
+            options=["Análise de Dados", "Previsão de Reprovação", "Home"],
+            icons=["bar-chart-fill", "robot", "house-door-fill"],
             default_index=0,
             styles={
                 "container": {
@@ -1506,7 +1594,7 @@ def pagina_analise(df, df_modelo):
                 "Média Geral Aprovados",
                 "bi-mortarboard-fill",
                 fmt_float_br(media_aprov, 2) if pd.notna(media_aprov) else "-",
-                "comparacao_aprov_reprov.csv",
+                "",
                 "metric-blue",
             ),
             unsafe_allow_html=True,
@@ -1518,7 +1606,7 @@ def pagina_analise(df, df_modelo):
                 "Média Geral Reprovados",
                 "bi-exclamation-triangle-fill",
                 fmt_float_br(media_reprov, 2) if pd.notna(media_reprov) else "-",
-                "comparacao_aprov_reprov.csv",
+                "",
                 "metric-red",
             ),
             unsafe_allow_html=True,
@@ -1701,6 +1789,8 @@ def pagina_analise(df, df_modelo):
                     y=serie_temporal["reprovado_pct"],
                     mode="lines+markers",
                     name="Reprovação (%)",
+                    line=dict(color="#60A5FA", width=2),
+                    marker=dict(color="#60A5FA", size=7),
                     hovertemplate="<b>%{x}</b><br>Reprovação: %{y:.2f}%<extra></extra>",
                 )
             )
@@ -1712,6 +1802,19 @@ def pagina_analise(df, df_modelo):
                 xaxis_title="Ano/Período",
                 yaxis_title="Taxa de Reprovação (%)",
                 showlegend=False,
+                font=dict(color="#000000"),
+                xaxis=dict(
+                    title_font=dict(color="#000000"),
+                    tickfont=dict(color="#000000"),
+                    gridcolor="rgba(0,0,0,0.18)",
+                    zerolinecolor="rgba(0,0,0,0.18)",
+                ),
+                yaxis=dict(
+                    title_font=dict(color="#000000"),
+                    tickfont=dict(color="#000000"),
+                    gridcolor="rgba(0,0,0,0.18)",
+                    zerolinecolor="rgba(0,0,0,0.18)",
+                ),
             )
             st.plotly_chart(fig_serie, use_container_width=True, config={"displayModeBar": False})
 
@@ -1741,6 +1844,7 @@ def pagina_analise(df, df_modelo):
                         labels=["Aprovação", "Reprovação"],
                         values=[taxa_aprov, taxa_reprov],
                         textinfo="label+percent",
+                        textfont=dict(color="#000000", size=16),
                         hovertemplate="<b>%{label}</b><br>Taxa: %{percent}<extra></extra>",
                     )
                 ]
@@ -1750,6 +1854,8 @@ def pagina_analise(df, df_modelo):
                 paper_bgcolor="#FFFFFF",
                 margin=dict(l=20, r=20, t=10, b=10),
                 showlegend=True,
+                font=dict(color="#000000"),
+                legend=dict(font=dict(color="#000000")),
             )
             st.plotly_chart(fig_pizza, use_container_width=True, config={"displayModeBar": False})
 
@@ -1923,19 +2029,15 @@ def pagina_previsao(df, df_modelo, resultados_modelo):
 
     modelos_pickle, erros_modelo, arquivos_modelo = carregar_modelos_pickle()
 
-    if not modelos_pickle:
-        st.error("Não foi possível carregar nenhum modelo .pkl da pasta modelos_pickle.")
+    modelo_escolhido = "Logit"
+
+    if modelo_escolhido not in modelos_pickle:
+        st.error("Não foi possível carregar o modelo Logit da pasta modelos_pickle.")
         if erros_modelo:
             for nome, erro in erros_modelo.items():
                 st.warning(f"{nome}: {erro}")
         footer()
         return
-
-    modelo_escolhido = st.selectbox(
-        "Selecione o modelo de previsão",
-        list(modelos_pickle.keys()),
-        index=0,
-    )
 
     modelo = modelos_pickle[modelo_escolhido]
     nome_arquivo_modelo = arquivos_modelo[modelo_escolhido].name
@@ -1977,87 +2079,25 @@ def pagina_previsao(df, df_modelo, resultados_modelo):
         except Exception:
             return 0.0
 
-    with st.container(border=True):
-        st.markdown(
-            """
-            <div class="pred-model-title">
-                <i class="bi bi-info-circle-fill"></i>
-                <span>Informações do Modelo</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        t1, t2, t3, t4 = st.columns(4)
-
-        with t1:
-            st.markdown(
-                f"""
-                <div class="pred-top-metric">
-                    <div class="pred-top-metric-label">Algoritmo</div>
-                    <div class="pred-top-metric-value">{modelo_escolhido}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        with t2:
-            st.markdown(
-                f"""
-                <div class="pred-top-metric">
-                    <div class="pred-top-metric-label">Arquivo</div>
-                    <div class="pred-top-metric-value">{nome_arquivo_modelo}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        with t3:
-            st.markdown(
-                f"""
-                <div class="pred-top-metric">
-                    <div class="pred-top-metric-label">Features esperadas</div>
-                    <div class="pred-top-metric-value">{len(feature_names)}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        with t4:
-            st.markdown(
-                """
-                <div class="pred-top-metric">
-                    <div class="pred-top-metric-label">Tipo</div>
-                    <div class="pred-top-metric-value">PKL</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        st.markdown(
-            """
-            <div class="pred-chip-wrap">
-                <div class="pred-chip-title">Variáveis do formulário usadas no vetor de previsão:</div>
-                <span class="pred-chip">Sexo</span>
-                <span class="pred-chip">Estado civil</span>
-                <span class="pred-chip">Raça</span>
-                <span class="pred-chip">Curso técnico</span>
-                <span class="pred-chip">Laboratório</span>
-                <span class="pred-chip">EAD</span>
-                <span class="pred-chip">Renda</span>
-                <span class="pred-chip">Ano/Período</span>
-                <span class="pred-chip">Reprovações acumuladas</span>
-                <span class="pred-chip">Curso</span>
-                <span class="pred-chip">Área</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    if erros_modelo:
-        with st.expander("Modelos não carregados"):
-            for nome, erro in erros_modelo.items():
-                st.write(f"**{nome}** — {erro}")
+    st.markdown(
+        """
+        <div class="pred-chip-wrap">
+            <div class="pred-chip-title">Variáveis do formulário usadas no vetor de previsão:</div>
+            <span class="pred-chip">Sexo</span>
+            <span class="pred-chip">Estado civil</span>
+            <span class="pred-chip">Raça</span>
+            <span class="pred-chip">Curso técnico</span>
+            <span class="pred-chip">Laboratório</span>
+            <span class="pred-chip">EAD</span>
+            <span class="pred-chip">Renda</span>
+            <span class="pred-chip">Ano/Período</span>
+            <span class="pred-chip">Reprovações acumuladas</span>
+            <span class="pred-chip">Curso</span>
+            <span class="pred-chip">Área</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
 
@@ -2112,35 +2152,106 @@ def pagina_previsao(df, df_modelo, resultados_modelo):
                 """,
                 unsafe_allow_html=True,
             )
-
             with st.form("form_previsao_pkl", clear_on_submit=False):
+                st.markdown(
+                    """
+                    <div class="pred-form-shell">
+                        <div class="pred-form-section-title">
+                            <i class="bi bi-person-vcard-fill"></i>
+                            <span>Perfil e contexto do estudante</span>
+                        </div>
+                        <div class="pred-form-help">Preencha os campos principais para gerar a estimativa de risco.</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
                 c1, c2 = st.columns(2)
                 with c1:
-                    sexo = st.selectbox("Sexo", ["Feminino", "Masculino"], index=["Feminino", "Masculino"].index(st.session_state.pred_form["sexo"]))
-                    estado_civil = st.selectbox("Estado civil", ["Solteiro(a)", "Casado(a)", "Outro"], index=["Solteiro(a)", "Casado(a)", "Outro"].index(st.session_state.pred_form["estado_civil"]))
-                    raca = st.selectbox("Raça declarada", ["Categoria de referência", "Nan", "Não informado", "Negra", "Outra"], index=["Categoria de referência", "Nan", "Não informado", "Negra", "Outra"].index(st.session_state.pred_form["raca"]))
-                    faixa_renda = st.selectbox("Faixa de renda familiar", ["Categoria de referência", "Até 1k", "2k a 4k", "4k a 8k", "8k ou mais", "Nan"], index=["Categoria de referência", "Até 1k", "2k a 4k", "4k a 8k", "8k ou mais", "Nan"].index(st.session_state.pred_form["faixa_renda"]))
-                    ano_periodo = st.selectbox("Ano/Período", periodo_labels, index=periodo_labels.index(st.session_state.pred_form["ano_periodo"]) if st.session_state.pred_form["ano_periodo"] in periodo_labels else 0)
+                    sexo = st.selectbox(
+                        "Sexo",
+                        ["Feminino", "Masculino"],
+                        index=["Feminino", "Masculino"].index(st.session_state.pred_form["sexo"]),
+                    )
+                    estado_civil = st.selectbox(
+                        "Estado civil",
+                        ["Solteiro(a)", "Casado(a)", "Outro"],
+                        index=["Solteiro(a)", "Casado(a)", "Outro"].index(st.session_state.pred_form["estado_civil"]),
+                    )
+                    raca = st.selectbox(
+                        "Raça declarada",
+                        ["Categoria de referência", "Nan", "Não informado", "Negra", "Outra"],
+                        index=["Categoria de referência", "Nan", "Não informado", "Negra", "Outra"].index(st.session_state.pred_form["raca"]),
+                    )
+                    faixa_renda = st.selectbox(
+                        "Faixa de renda familiar",
+                        ["Categoria de referência", "Até 1k", "2k a 4k", "4k a 8k", "8k ou mais", "Nan"],
+                        index=["Categoria de referência", "Até 1k", "2k a 4k", "4k a 8k", "8k ou mais", "Nan"].index(st.session_state.pred_form["faixa_renda"]),
+                    )
 
                 with c2:
-                    dummy_tecnico = st.checkbox("Curso técnico", value=st.session_state.pred_form["dummy_tecnico"])
-                    tem_laboratorio = st.checkbox("Tem laboratório", value=st.session_state.pred_form["tem_laboratorio"])
-                    tem_ead = st.checkbox("Tem EAD", value=st.session_state.pred_form["tem_ead"])
-                    reprov_ate_entao = st.number_input("Reprovações até então", min_value=0, step=1, value=int(st.session_state.pred_form["reprov_ate_entao"]))
-                    reprov_disc_ate_entao = st.number_input("Reprovações na disciplina até então", min_value=0, step=1, value=int(st.session_state.pred_form["reprov_disc_ate_entao"]))
+                    ano_periodo = st.selectbox(
+                        "Ano/Período",
+                        periodo_labels,
+                        index=periodo_labels.index(st.session_state.pred_form["ano_periodo"]) if st.session_state.pred_form["ano_periodo"] in periodo_labels else 0,
+                    )
+                    n1, n2 = st.columns(2)
+                    with n1:
+                        reprov_ate_entao = st.number_input(
+                            "Reprovações até então",
+                            min_value=0,
+                            step=1,
+                            value=int(st.session_state.pred_form["reprov_ate_entao"]),
+                        )
+                    with n2:
+                        reprov_disc_ate_entao = st.number_input(
+                            "Na disciplina",
+                            min_value=0,
+                            step=1,
+                            value=int(st.session_state.pred_form["reprov_disc_ate_entao"]),
+                        )
 
-                curso_id = st.selectbox(
-                    "ID do curso",
-                    curso_ids if curso_ids else ["nan"],
-                    index=(curso_ids.index(st.session_state.pred_form["curso_id"]) if st.session_state.pred_form["curso_id"] in curso_ids else 0) if curso_ids else 0,
+                    st.markdown(
+                        """
+                        <div class="pred-form-section-title" style="margin-top:0.35rem;">
+                            <i class="bi bi-toggles2"></i>
+                            <span>Características acadêmicas</span>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                    b1, b2, b3 = st.columns(3)
+                    with b1:
+                        dummy_tecnico = st.checkbox("Curso técnico", value=st.session_state.pred_form["dummy_tecnico"])
+                    with b2:
+                        tem_laboratorio = st.checkbox("Laboratório", value=st.session_state.pred_form["tem_laboratorio"])
+                    with b3:
+                        tem_ead = st.checkbox("EAD", value=st.session_state.pred_form["tem_ead"])
+
+                st.markdown(
+                    """
+                    <div class="pred-form-section-title" style="margin-top:0.7rem;">
+                        <i class="bi bi-book-half"></i>
+                        <span>Curso e área do conhecimento</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
 
-                area_conhecimento = st.selectbox(
-                    "Área do conhecimento",
-                    area_opts if area_opts else ["educacao"],
-                    index=(area_opts.index(st.session_state.pred_form["area_conhecimento"]) if st.session_state.pred_form["area_conhecimento"] in area_opts else 0) if area_opts else 0,
-                    format_func=lambda x: str(x).replace("_", " ").title(),
-                )
+                k1, k2 = st.columns(2)
+                with k1:
+                    curso_id = st.selectbox(
+                        "ID do curso",
+                        curso_ids if curso_ids else ["nan"],
+                        index=(curso_ids.index(st.session_state.pred_form["curso_id"]) if st.session_state.pred_form["curso_id"] in curso_ids else 0) if curso_ids else 0,
+                    )
+                with k2:
+                    area_conhecimento = st.selectbox(
+                        "Área do conhecimento",
+                        area_opts if area_opts else ["educacao"],
+                        index=(area_opts.index(st.session_state.pred_form["area_conhecimento"]) if st.session_state.pred_form["area_conhecimento"] in area_opts else 0) if area_opts else 0,
+                        format_func=lambda x: str(x).replace("_", " ").title(),
+                    )
 
                 submitted = st.form_submit_button("🔍 Prever Risco de Reprovação", use_container_width=True)
 
@@ -2265,7 +2376,7 @@ def pagina_previsao(df, df_modelo, resultados_modelo):
         """
         <div class="pred-note">
             <b>Como interpretar:</b> O formulário monta um vetor no formato exato esperado pelo arquivo .pkl.
-            A previsão exibida corresponde à probabilidade de reprovação calculada pelo modelo selecionado.
+            A previsão exibida corresponde à probabilidade de reprovação calculada pelo modelo Logit.
         </div>
         """,
         unsafe_allow_html=True,
